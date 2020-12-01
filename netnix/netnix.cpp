@@ -58,7 +58,7 @@ public:
             char z[strlen(x) + strlen(y)];
             strcpy(z,x);
             strcpy(z,y);
-            lasterror = z;
+            lasterror = "Socket.resolve: unable to resolve address/port";//z;
             return -1;
         }
 
