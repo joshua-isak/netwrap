@@ -1,7 +1,7 @@
 // C UNIX socket stuff
-#include <sys/socket.h> 
-#include <arpa/inet.h> 
-#include <unistd.h> 
+#include <sys/socket.h>
+#include <arpa/inet.h>
+#include <unistd.h>
 #include <netdb.h>
 
 //#include "netnix.h"
@@ -72,30 +72,73 @@ public:
     }
 
 
-    // Send data to an address on the socket (UDP)
-    int sendto(char data[], const char * address, const char * port);
+    // Send data to an address on the socket (UDP) using char * address data
+    int sendto(char data[], const char * address, const char * port) {
+        // Resolve destination address
+        sockaddr_storage destination;
+        int err = resolve((char *)address, (char *)port, &destination);
+        if (err != 0) {  // Check for errors
+            return -1;
+        }
 
-
-    // Send data to an address on the socket (UDP using sockaddr_storage)
-    int sendto(char data[], sockaddr_storage destination) {
         // Send buffer data
-        int res = ::sendto(socket, data, strlen(data), 0, (sockaddr *) &destination, (socklen_t) destination.ss_len);
-    
+        int res = ::sendto(socket, data, strlen(data), 0, (sockaddr *) &destination, (socklen_t) sizeof(destination));
+
         // Check for errors
         if (res == -1) {
             lasterror = "Socket.sendto: error sending data";
             return -1;
         }
 
-        return res;     // return number of bytes sent
+        return res;     // return the number of bytes sent
+    }
+
+
+    // Send data to an address on the socket (UDP using sockaddr_storage)
+    int sendto(char data[], sockaddr_storage destination) {
+        // Send buffer data
+        int res = ::sendto(socket, data, strlen(data), 0, (sockaddr *) &destination, (socklen_t) sizeof(destination));
+
+        // Check for errors
+        if (res == -1) {
+            lasterror = "Socket.sendto: error sending data";
+            return -1;
+        }
+
+        return res;     // return the number of bytes sent
     }
 
 
     // Read data from the incoming socket buffer
-    int recv(char recvbuf[], int recvbuflen);
+    int recv(char recvbuf[], int recvbuflen) {
+        // Receive data on the socket
+        int res = ::recv(socket, recvbuf, recvbuflen, 0);
+
+        // Check for errors
+        if (res < 0) {
+            lasterror = "Socket.recv: error reading from socket";
+            return -1;
+        }
+
+        return res;     // return the number of bytes received
+    }
+
 
     // Read data and sender address from incoming socket buffer
-    int recvfrom(char recvbuf[], int recvbuflen, sockaddr_storage &from);
+    int recvfrom(char recvbuf[], int recvbuflen, sockaddr_storage &from) {
+        int fromsize = sizeof(from);
+
+        // Receive data on the socket
+        int res = ::recvfrom(socket, recvbuf, recvbuflen, 0, (sockaddr *) &from, (socklen_t *) &fromsize);
+
+        // Check for errors
+        if (res < 0) {
+            lasterror = "Socket.recvfrom: error reading from socket";
+            return -1;
+        }
+
+        return res;     // return the number of bytes received
+    }
 
     // Close the socket
     void close();

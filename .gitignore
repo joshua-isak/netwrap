@@ -2,3 +2,4 @@
 syntax.cpp
 *.exe
 test
+test.dSYM
