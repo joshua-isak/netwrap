@@ -13,70 +13,127 @@ using namespace std;
 
 class Socket {
 public:
-    SOCKET sock = INVALID_SOCKET;
+    SOCKET socket = INVALID_SOCKET;
+    int socktype;
+    int af_family;
+    const char * lasterror;
+
     struct addrinfo *result = NULL, *ptr = NULL, hints;
     int recvbuflen = 512;
 
 
-    // Socket(int protocol, int socktype) {
-
-    // }
-
     // Initialize the socket
-    int init(int type, int af) {
+    int init(int type, int af, int protocol) {
+        // Initialize Winsock
+        WSADATA wsaData;
 
-        int protocol;
-        memset(&hints, 0, sizeof(hints));
-
-        // Initialize UDP or TCP socket parameters
-        if (type == SOCK_DGRAM) {
-            hints.ai_family = af;
-            hints.ai_socktype = SOCK_DGRAM;             //for tcp: SOCK_STREAM;
-            hints.ai_protocol = IPPROTO_UDP;            //for tcp: IPPROTO_TCP
-            protocol = IPPROTO_UDP;
-        } else if (type == SOCK_STREAM) {
-            /* code */
+        // Check for errors
+        int res = WSAStartup(MAKEWORD(2,2), &wsaData);
+        if (res != 0) {
+            lasterror = "Socket.init: WSAStartup failed";
+            return -1;
         }
 
-        // Create the socket
-        sock = socket(af, type, protocol);
+        // Set some variables
+        socktype = type;
+        af_family = af;
 
-        if (sock == INVALID_SOCKET) {      // Check for errors in creating the SOCKET
-            printf("Networker: Error at socket(): %ld\n", WSAGetLastError());
-            freeaddrinfo(result);
+        // Create the spcket
+        socket = ::socket(af, type, protocol);
+
+        // Check for errors in socket creation
+        if (socket == INVALID_SOCKET) {
+            lasterror = "Socket.init: socket creation failed";
             WSACleanup();
             return -1;
         }
+
+        return 0;
+
+        // // Initialize UDP or TCP socket parameters
+        // if (type == SOCK_DGRAM) {
+        //     hints.ai_family = af;
+        //     hints.ai_socktype = SOCK_DGRAM;             //for tcp: SOCK_STREAM;
+        //     hints.ai_protocol = IPPROTO_UDP;            //for tcp: IPPROTO_TCP
+        //     protocol = IPPROTO_UDP;
+        // } else if (type == SOCK_STREAM) {
+        //     /* code */
+        // }
+
+        // Create the socket
+        // sock = socket(af, type, protocol);
+
+        // if (sock == INVALID_SOCKET) {      // Check for errors in creating the SOCKET
+        //     printf("Networker: Error at socket(): %ld\n", WSAGetLastError());
+        //     freeaddrinfo(result);
+        //     WSACleanup();
+        //     return -1;
+        // }
     }
 
 
-    // Resolve an address and port
-    int resolve();
+    // Resolve a network address into a sockaddr_storage
+    int resolve(const char * address, const char * port, sockaddr_storage *result) {
+        // Set hints
+        addrinfo hints;
+        memset(&hints, 0, sizeof(hints));
+        hints.ai_family = af_family;
+        hints.ai_socktype = socktype;
+
+        // Put address results into resinfo
+        addrinfo * resinfo;
+        int err = getaddrinfo(address, port, &hints, &resinfo);
+
+        // Check for errors
+        if (err != 0) {
+            lasterror = "Socket.resolve: unable to resolve address/port";//z;
+            return -1;
+        }
+
+        // Extract results and set them to &results
+        memset(result, 0, sizeof(*result));
+        memcpy(result, resinfo->ai_addr, resinfo->ai_addrlen);
+
+        freeaddrinfo(resinfo);
+
+        return 0;
+    }
 
 
-    //#TODO change sendto so that it takes in real address data not just strings and looks them up every time....
     // Send data to an address on the socket (UDP)
     int sendto(char data[], const char *address, const char *port) {
 
         // Resolve the server address and port
-        int iResult = getaddrinfo(address, port, &hints, &result);
-        if (iResult != 0) {
-            printf("Networker: getaddrinfo failed: %d\n", iResult);
-            WSACleanup();
+        int res = getaddrinfo(address, port, &hints, &result);
+        if (res != 0) {
+            lasterror = "Networker: getaddrinfo failed";
             return -1;
         }
         ptr=result;
 
         // Send a buffer
-        iResult = ::sendto(sock, data, (int) strlen(data), 0, ptr->ai_addr, (int)ptr->ai_addrlen);  //:: to specify not a recursive call
-        if (iResult == SOCKET_ERROR) {
-            printf("Networker: send failed: %d\n", WSAGetLastError());
-            closesocket(sock);
-            WSACleanup();
+        res = ::sendto(socket, data, (int) strlen(data), 0, ptr->ai_addr, (int)ptr->ai_addrlen);
+        if (res == SOCKET_ERROR) {
+            lasterror = "Socket.sendto: error sending data";
             return -1;
         }
 
-        return iResult;     // Return the number of bytes sent
+        return res;     // return the number of bytes sent
+    }
+
+
+    // Send data to an address on the socket (UDP using sockaddr_storage)
+    int sendto(char data[], sockaddr_storage destination) {
+        // Send buffer data
+        int res = ::sendto(socket, data, strlen(data), 0, (sockaddr *) &destination, (socklen_t) sizeof(destination));
+
+        // Check for errors
+        if (res == -1) {
+            lasterror = "Socket.sendto: error sending data";
+            return -1;
+        }
+
+        return res;     // return the number of bytes sent
     }
 
 
@@ -84,7 +141,7 @@ public:
     int recv(char recvbuf[]) {
 
         // Receive data on the socket
-        int iResult = ::recv(sock, recvbuf, recvbuflen, 0);     //:: to specify not a recursive call
+        int iResult = ::recv(socket, recvbuf, recvbuflen, 0);
         if (iResult == 0)
             printf("Networker: Connection closed\n");   // returns 0
         else if (iResult < 0)
@@ -101,7 +158,7 @@ public:
         int fromsize = sizeof(from);
 
         // Receive data on the socket
-        int iResult = ::recvfrom(sock, recvbuf, recvbuflen, 0, (SOCKADDR *) &from, &fromsize);     //:: to specify not a recursive call
+        int iResult = ::recvfrom(socket, recvbuf, recvbuflen, 0, (SOCKADDR *) &from, &fromsize);     //:: to specify not a recursive call
         if (iResult == 0)
             printf("Networker: Connection closed\n");   // returns 0
         else if (iResult < 0)
@@ -113,39 +170,13 @@ public:
 
     // Close the socket
     void close() {
-        closesocket(sock);
+        closesocket(socket);
+        WSACleanup();
     }
 
 };
 
 
-
-
-// // return an IP address and port as a char * in the format "addr:port"
-//     char * addrtos(sockaddr_in addr) {
-//     }
-
-//     // return the IP address as a char * (now supports IPV6!)
-//     void iptos(sockaddr_storage addr, char * str) {
-//         socklen_t client_len = sizeof(struct sockaddr_storage);
-//         char hoststr[NI_MAXHOST];
-//         char portstr[NI_MAXSERV];
-
-//         int rc = getnameinfo((struct sockaddr *)&addr, client_len, hoststr, sizeof(hoststr), portstr, sizeof(portstr), NI_NUMERICHOST | NI_NUMERICSERV);
-
-//         *str = *hoststr;
-//     }
-
-//     // return the port as a char *
-//     void porttos(sockaddr_storage addr, char * str) {
-//         socklen_t client_len = sizeof(struct sockaddr_storage);
-//         char hoststr[NI_MAXHOST];
-//         char portstr[NI_MAXSERV];
-
-//         int rc = getnameinfo((struct sockaddr *)&addr, client_len, hoststr, sizeof(hoststr), portstr, sizeof(portstr), NI_NUMERICHOST | NI_NUMERICSERV);
-
-//         str = portstr;
-//     }
 
 
 
@@ -157,19 +188,9 @@ int main(int argc, char *argv[]) {
     char *PORT = argv[2];
     char data[] = "~hello world!";
 
-    // Initialize Winsock
-    WSADATA wsaData;
-
-    int iResult = WSAStartup(MAKEWORD(2,2), &wsaData);
-    if (iResult != 0) {
-        printf("WSAStartup failed: %d\n", iResult);
-        return 1;
-    }
-
     // Declare and initialize socket
     Socket sock;
-    sock.init(SOCK_DGRAM, AF_UNSPEC);
-
+    sock.init(SOCK_DGRAM, AF_UNSPEC, IPPROTO_UDP);
 
     // Send data on the socket
     sock.sendto(data, ADDRESS, PORT);
@@ -182,7 +203,6 @@ int main(int argc, char *argv[]) {
     result[len] = '\0';         // Make this char array printable...
     printf("Reply: %s\n", result);
 
-
     // Record and print sender data!
     socklen_t client_len = sizeof(struct sockaddr_storage);
     char hoststr[NI_MAXHOST];
@@ -192,19 +212,10 @@ int main(int argc, char *argv[]) {
     //if (rc == 0) printf("Address:  %s:%s\n", hoststr, portstr);
     printf("Address:  %s:%s\n", hoststr, portstr);
 
-    // char hstr[NI_MAXHOST]; char pstr[NI_MAXSERV];
-    // iptos(senderaddr, hstr);
-    // porttos(senderaddr, pstr);
-    // printf("Address2: %s:%s", hstr, pstr);
-
     // Send the data back!
     //sock.sendto(data, inet_ntoa(senderaddr.), PORT);
 
-
     // Close socket
     sock.close();
-
-    // Cleanup Winsock
-    WSACleanup();
 
 }

@@ -16,7 +16,7 @@ public:
     int socktype;
     int af_family;
     const char * lasterror;
-    struct sockaddr_storage recvaddr;
+    //struct sockaddr_storage recvaddr;
 
 
     // Initialize the socket
@@ -59,7 +59,7 @@ public:
             strcpy(z,x);
             strcpy(z,y);
             lasterror = "Socket.resolve: unable to resolve address/port";//z;
-            return -1;
+            return -1;  // consider removing or adding a freeaddrinfo(resinfo) above to avoid memleaks
         }
 
         // Extract results and set them to &results
